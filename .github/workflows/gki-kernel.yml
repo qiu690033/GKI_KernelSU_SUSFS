@@ -159,6 +159,7 @@ jobs:
 
       - name: 克隆 AnyKernel3 和其他依赖项
         run: |
+          set -e # <--- 确保任何 git clone 失败时立即退出
           echo "Cloning AnyKernel3 and other dependencies..."
 
           ANYKERNEL_BRANCH="gki-2.0"
@@ -175,6 +176,11 @@ jobs:
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           # next修复补丁
           git clone https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patch
+
+          # --- 新增：验证 zzh_patch 目录内容 ---
+          echo "验证 zzh_patch 目录内容:"
+          ls -la zzh_patch/
+          # --- 结束验证 ---
           
       - name: 设置 CONFIG 环境变量
         run: |
@@ -228,7 +234,7 @@ jobs:
           echo "CONFIG_HMBIRD_SUPPORT=y" >> "$CONFIG/common/arch/arm64/configs/gki_defconfig"
           echo "已在 gki_defconfig 中启用 CONFIG_HMBIRD_SUPPORT"
 
-      # 集成自定义C语言功能 - 新增步骤
+      # 集成自定义C语言功能 - 新增步骤，并修正了文件复制路径
       - name: 集成自定义C语言功能
         run: |
           echo "集成自定义C语言功能到内核源码..."
@@ -236,19 +242,21 @@ jobs:
           mkdir -p "$CUSTOM_FEATURES_DIR"
 
           # 复制自定义 C/H 文件到新目录
+          # 注意：这里源路径直接从 $GITHUB_WORKSPACE/ (即当前仓库根目录) 复制
           echo "复制 ext.c, ext.h, build_policy.c, hmbird_sched_proc.h, hmbird_sched_proc_main.c, slim.h, slim_sysctl.c"
-          cp "$GITHUB_WORKSPACE/zzh_patch/ext.c" "$CUSTOM_FEATURES_DIR/"
-          cp "$GITHUB_WORKSPACE/zzh_patch/ext.h" "$CUSTOM_FEATURES_DIR/"
-          cp "$GITHUB_WORKSPACE/zzh_patch/build_policy.c" "$CUSTOM_FEATURES_DIR/"
-          cp "$GITHUB_WORKSPACE/zzh_patch/hmbird_sched_proc.h" "$CUSTOM_FEATURES_DIR/"
-          cp "$GITHUB_WORKSPACE/zzh_patch/hmbird_sched_proc_main.c" "$CUSTOM_FEATURES_DIR/"
-          cp "$GITHUB_WORKSPACE/zzh_patch/slim.h" "$CUSTOM_FEATURES_DIR/"
-          cp "$GITHUB_WORKSPACE/zzh_patch/slim_sysctl.c" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/ext.c" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/ext.h" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/build_policy.c" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/hmbird_sched_proc.h" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/hmbird_sched_proc_main.c" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/slim.h" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/slim_sysctl.c" "$CUSTOM_FEATURES_DIR/"
 
           # 条件复制 hmbird_patch.c
+          # 注意：这里源路径直接从 $GITHUB_WORKSPACE/ (即当前仓库根目录) 复制
           if ${{ inputs.supp_op }}; then
             echo "复制 hmbird_patch.c (一加8E支持)"
-            cp "$GITHUB_WORKSPACE/zzh_patch/hmbird_patch.c" "$CUSTOM_FEATURES_DIR/"
+            cp "$GITHUB_WORKSPACE/hmbird_patch.c" "$CUSTOM_FEATURES_DIR/"
           fi
 
           # 创建 custom_features 目录的 Makefile
@@ -281,6 +289,8 @@ jobs:
           echo "RUST_TARGET=aarch64-unknown-linux-gnu" >> $GITHUB_ENV
 
       # 拉取 sched_ext (qiu690033) 并放入内核源码树 - 如果你已手动复制文件，请删除此步骤
+      # 备注：如果你已经手动将 qiu690033/sched_ext 的文件内容复制到你仓库的 common/drivers/sched_ext/ 目录，
+      # 那么这一步应该被注释掉或删除。如果不是，则需要启用它。
       # - name: 拉取 sched_ext (qiu690033) 并放入内核源码树
       #   run: |
       #     cd ${{ env.CONFIG }}/common
@@ -354,7 +364,7 @@ jobs:
           elif [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
             echo "Adding KernelSU Next..."
             curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash $BRANCH
-          elif [ "${{ inputs.kernelsu_variant }}" == "MKSU" ]; then
+          elif [ "${{ inputs.kernelsu_variant }}quot; == "MKSU" ]; then
             echo "Adding KernelSU MKSU..."
             curl -LSs "https://raw.githubusercontent.com/5ec1cff/KernelSU/main/kernel/setup.sh" | bash $BRANCH
           elif [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
@@ -579,7 +589,7 @@ jobs:
             sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
           fi
 
-          if [ "${{ inputs.kernel_version }}quot; = "6.6" ]; then
+          if [ "${{ inputs.kernel_version }}" = "6.6" ]; then
             echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
             sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
           fi
@@ -802,7 +812,7 @@ jobs:
       - name: 修补 Image 文件 安卓12和安卓13(仅限sukisu)
         if: ${{ inputs.use_kpm && inputs.kernelsu_variant == 'SukiSU' && (inputs.android_version == 'android12' || inputs.android_version == 'android13') }}
         run: |
-          if [ "${{ inputs.kernel_version }}quot; != "6.6" ]; then
+          if [ "${{ inputs.kernel_version }}" != "6.6" ]; then
             echo "Patching Image file..."
             cd "$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist"
             curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
