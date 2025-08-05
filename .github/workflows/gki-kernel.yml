@@ -219,23 +219,96 @@ jobs:
             patch -p1 < fix_5.15.legacy.patch
           fi
 
-      - name: 使GKI在一加8E平台正常使用
+      # --- START: 对自定义C语言功能和Rust绑定的修改 ---
+
+      # 启用一加8E平台支持 (Kconfig) - 替换了原有的 `使GKI在一加8E平台正常使用` 步骤
+      - name: 启用一加8E平台支持 (Kconfig)
         if: ${{ inputs.supp_op }}
         run: |
-          echo '切换到驱动目录'
-          cd "$CONFIG/common/drivers/"
-          echo '当前目录$(pwd),下载支持补丁'
-          curl -LSs "https://github.com/zzh20188/GKI_KernelSU_SUSFS/raw/refs/heads/dev/hmbird_patch.c" -o hmbird_patch.c
-          if [ ! -f hmbird_patch.c ]; then
-            echo "hmbird_patch.c 下载失败"
+          echo "CONFIG_HMBIRD_SUPPORT=y" >> "$CONFIG/common/arch/arm64/configs/gki_defconfig"
+          echo "已在 gki_defconfig 中启用 CONFIG_HMBIRD_SUPPORT"
+
+      # 集成自定义C语言功能 - 新增步骤
+      - name: 集成自定义C语言功能
+        run: |
+          echo "集成自定义C语言功能到内核源码..."
+          CUSTOM_FEATURES_DIR="$CONFIG/common/drivers/custom_features"
+          mkdir -p "$CUSTOM_FEATURES_DIR"
+
+          # 复制自定义 C/H 文件到新目录
+          echo "复制 ext.c, ext.h, build_policy.c, hmbird_sched_proc.h, hmbird_sched_proc_main.c, slim.h, slim_sysctl.c"
+          cp "$GITHUB_WORKSPACE/zzh_patch/ext.c" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/zzh_patch/ext.h" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/zzh_patch/build_policy.c" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/zzh_patch/hmbird_sched_proc.h" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/zzh_patch/hmbird_sched_proc_main.c" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/zzh_patch/slim.h" "$CUSTOM_FEATURES_DIR/"
+          cp "$GITHUB_WORKSPACE/zzh_patch/slim_sysctl.c" "$CUSTOM_FEATURES_DIR/"
+
+          # 条件复制 hmbird_patch.c
+          if ${{ inputs.supp_op }}; then
+            echo "复制 hmbird_patch.c (一加8E支持)"
+            cp "$GITHUB_WORKSPACE/zzh_patch/hmbird_patch.c" "$CUSTOM_FEATURES_DIR/"
           fi
-          echo '补丁加入构建'
-          echo "obj-y += hmbird_patch.o" >> Makefile
-          tail -n 3 Makefile
+
+          # 创建 custom_features 目录的 Makefile
+          echo "创建 $CUSTOM_FEATURES_DIR/Makefile"
+          cat <<EOF > "$CUSTOM_FEATURES_DIR/Makefile"
+          # Custom features for GKI KernelSU SUSFS
+          obj-y += ext.o
+          obj-y += build_policy.o
+          obj-y += hmbird_sched_proc_main.o
+          obj-y += slim_sysctl.o
+
+          # Conditional compilation for hmbird_patch.c
+          ifeq (\$(CONFIG_HMBIRD_SUPPORT),y)
+          obj-y += hmbird_patch.o
+          endif
+          EOF
+
+          # 将 custom_features 目录添加到 common/drivers/Makefile
+          echo "将 custom_features/ 添加到 $CONFIG/common/drivers/Makefile"
+          echo "obj-y += custom_features/" >> "$CONFIG/common/drivers/Makefile"
+          tail -n 3 "$CONFIG/common/drivers/Makefile" # 打印最后几行确认修改
+
+      # 安装 Rust 工具链 - 确保此步骤位于所有需要 Rust 的步骤之前
+      - name: 安装 Rust 工具链
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y
+          source $HOME/.cargo/env
+          rustup target add aarch64-unknown-linux-gnu
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          echo "RUST_TARGET=aarch64-unknown-linux-gnu" >> $GITHUB_ENV
+
+      # 拉取 sched_ext (qiu690033) 并放入内核源码树 - 如果你已手动复制文件，请删除此步骤
+      # - name: 拉取 sched_ext (qiu690033) 并放入内核源码树
+      #   run: |
+      #     cd ${{ env.CONFIG }}/common
+      #     mkdir -p drivers/sched_ext
+      #     git clone https://github.com/qiu690033/sched_ext.git drivers/sched_ext --depth 1
+
+      # 启用 Rust 与 SCHED_EXT 配置 - 确保此步骤在内核配置加载前执行
+      - name: 启用 Rust 与 SCHED_EXT 配置
+        run: |
+          cd ${{ env.CONFIG }}/common
+          echo "CONFIG_RUST=y"          >> arch/arm64/configs/gki_defconfig
+          echo "CONFIG_SCHED_EXT=y"    >> arch/arm64/configs/gki_defconfig
+
+      # 缓存 Cargo（可选）
+      - name: 缓存 Cargo 注册表 & 目标目录
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ${{ env.CONFIG }}/common/drivers/sched_ext/target # 注意路径是你的仓库内部路径
+          key: cargo-${{ runner.os }}-sched_ext-${{ hashFiles('drivers/sched_ext/Cargo.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-sched_ext-
+
+      # --- END: 对自定义C语言功能和Rust绑定的修改 ---
       
       - name: 确定 KernelSU 的分支
         run: |
-
           branch_input="${{ inputs.kernelsu_branch }}"
           variant_input="${{ inputs.kernelsu_variant }}"
 
@@ -506,7 +579,7 @@ jobs:
             sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
           fi
 
-          if [ "${{ inputs.kernel_version }}" = "6.6" ]; then
+          if [ "${{ inputs.kernel_version }}quot; = "6.6" ]; then
             echo "CONFIG_ZSMALLOC=y" >> "$CONFIG_FILE"
             sed -i 's/CONFIG_ZRAM=m/CONFIG_ZRAM=y/g' "$CONFIG_FILE"
           fi
@@ -586,7 +659,7 @@ jobs:
           echo "CURRENT_TIME=$CURRENT_TIME"
 
           # 设置构建时间为上方的 `CURRENT_TIME` 变量 (5系)
-          perl -pi -e "s{UTS_VERSION=\"\\\$\(echo \\\$UTS_VERSION \\\$CONFIG_FLAGS \\\$TIMESTAMP \\| cut -b -\\\$UTS_LEN\)\"}{UTS_VERSION=\"#1 SMP PREEMPT $CURRENT_TIME\"}" ./common/scripts/mkcompile_h
+          perl -pi -e "s{UTS_VERSION=\"\\\$$echo \\\$UTS_VERSION \\\$CONFIG_FLAGS \\\$TIMESTAMP \\| cut -b -\\\$UTS_LEN$\"}{UTS_VERSION=\"#1 SMP PREEMPT $CURRENT_TIME\"}" ./common/scripts/mkcompile_h
           if [ -f "build/build.sh" ]; then
             echo "5系:删除dirty字符串"
             sed -i 's/-dirty//' ./common/scripts/setlocalversion
@@ -609,7 +682,7 @@ jobs:
           if [ ! -z ${{ inputs.version }} ]; then
             echo "版本号不为空"
             sed -i '$s|echo "\$res"|echo "${{ inputs.version }}"|' ./common/scripts/setlocalversion
-            sed -i '/^CONFIG_LOCALVERSION=/ s/="\([^"]*\)"/="${{ inputs.version }}"/' ./common/arch/arm64/configs/gki_defconfig
+            sed -i '/^CONFIG_LOCALVERSION=/ s/="$[^"]*$"/="${{ inputs.version }}"/' ./common/arch/arm64/configs/gki_defconfig
           elif [ ! -f "build/build.sh" ]; then
             echo "版本号为空,如果使用bazel编译,且如果使用bazel则加上kmi"
             cd ./common
@@ -635,7 +708,7 @@ jobs:
       #       case "${{ inputs.kernel_version }}" in
       #             "6.1")
       #                 echo "进入6.1 内核名称编辑"
-      #                 sed -i '0,/^android_release=/s/\(android_release=.*\)/\1android14-11/' ./common/scripts/setlocalversion
+      #                 sed -i '0,/^android_release=/s/$android_release=.*$/\1android14-11/' ./common/scripts/setlocalversion
       #                 ;;
       #             "6.6")
       #                 echo "进入6.6 内核名称编辑"
@@ -729,7 +802,7 @@ jobs:
       - name: 修补 Image 文件 安卓12和安卓13(仅限sukisu)
         if: ${{ inputs.use_kpm && inputs.kernelsu_variant == 'SukiSU' && (inputs.android_version == 'android12' || inputs.android_version == 'android13') }}
         run: |
-          if [ "${{ inputs.kernel_version }}" != "6.6" ]; then
+          if [ "${{ inputs.kernel_version }}quot; != "6.6" ]; then
             echo "Patching Image file..."
             cd "$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist"
             curl -LSs "https://raw.githubusercontent.com/ShirkNeko/SukiSU_patch/refs/heads/main/kpm/patch_linux" -o patch
