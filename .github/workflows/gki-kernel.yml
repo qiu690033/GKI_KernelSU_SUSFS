@@ -28,9 +28,6 @@ on:
       kernelsu_branch:
         required: true
         type: string
-      # kernelsu_branch_other:
-      #   required: false
-      #   type: string
       revision:
         required: false
         type: string
@@ -176,16 +173,6 @@ jobs:
           # next修复补丁
           git clone https://github.com/zzh20188/GKI_KernelSU_SUSFS.git zzh_patch
           
-      - name: 设置 CONFIG 环境变量
-        run: |
-          # Set CONFIG dynamically based on inputs values
-          CONFIG="${{ inputs.android_version }}-${{ inputs.kernel_version }}-${{ inputs.sub_level }}"
-
-          # Set CONFIG as an environment variable for future steps
-          echo "CONFIG=$CONFIG" >> $GITHUB_ENV
-
-          echo "CONFIG set to: $CONFIG"
-
       - name: 初始化和同步内核源代码
         run: |
           echo "Creating folder for configuration: $CONFIG..."
@@ -219,20 +206,11 @@ jobs:
             patch -p1 < fix_5.15.legacy.patch
           fi
 
-      - name: 使GKI在一加8E平台正常使用
-        if: ${{ inputs.supp_op }}
+      - name: 拉取 LSE 子模块
         run: |
-          echo '切换到驱动目录'
-          cd "$CONFIG/common/drivers/"
-          echo '当前目录$(pwd),下载支持补丁'
-          curl -LSs "https://github.com/zzh20188/GKI_KernelSU_SUSFS/raw/refs/heads/dev/hmbird_patch.c" -o hmbird_patch.c
-          if [ ! -f hmbird_patch.c ]; then
-            echo "hmbird_patch.c 下载失败"
-          fi
-          echo '补丁加入构建'
-          echo "obj-y += hmbird_patch.o" >> Makefile
-          tail -n 3 Makefile
-      
+          cd "$CONFIG/common"
+          git submodule update --init --recursive kernel/drivers/misc/lunarkernel_sched_extention
+
       - name: 确定 KernelSU 的分支
         run: |
 
@@ -540,7 +518,7 @@ jobs:
             echo 'CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"' >> arch/arm64/configs/gki_defconfig
           fi
       
-      - name: 添加SUSFS配置设置
+      - name: 添加SUSFS和LSE配置设置
         run: |
           echo "更改为配置目录: $CONFIG..."
           cd "$CONFIG"
@@ -575,11 +553,19 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> ./common/arch/arm64/configs/gki_defconfig
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> ./common/arch/arm64/configs/gki_defconfig
           
+          # 添加 LSE 配置
+          echo "CONFIG_LUNAR_SCHED_EXT=y" >> ./common/arch/arm64/configs/gki_defconfig
+          
           # Remove check_defconfig
           sed -i 's/check_defconfig//' ./common/build.config.gki
 
           # 用于debug config
           tail -n 40 ./common/arch/arm64/configs/gki_defconfig
+
+      - name: 编译 LSE 模块
+        run: |
+          cd "$CONFIG/common/drivers/misc/lunarkernel_sched_extention"
+          make -C ${{ env.CONFIG }}/common ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- M=$(pwd) modules
 
       - name: 配置内核构时间/删除dirty字符
         run: |
@@ -842,6 +828,7 @@ jobs:
           path: |
             *AnyKernel3.zip
             *.img
+            ${{ env.CONFIG }}/common/drivers/misc/lunarkernel_sched_extention/*.ko
 
       - name: 上传编译资产 (仅 AK3)
         if: ${{ inputs.onlyAk3 }}
