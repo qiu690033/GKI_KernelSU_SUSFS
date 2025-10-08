@@ -49,11 +49,6 @@ on:
         required: true
         type: boolean
         default: true
-      supp_op:
-        description: '是否开启一加8E处理器机型支持?(非该机型无须勾)'
-        required: false
-        type: boolean
-        default: false
       get_manager:
         description: '获取最新KSU管理器和SUS模块?'
         required: true
