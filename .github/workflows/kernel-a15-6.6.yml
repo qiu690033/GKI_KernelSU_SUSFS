@@ -37,11 +37,6 @@ on:
         required: true
         type: boolean
         default: true
-      supp_op:
-        description: '是否开启一加8E处理器机型支持?'
-        required: false
-        type: boolean
-        default: false
       onlyAk3:
         description: '仅上传AK3压缩包?(无boot,下载更快)'
         required: false
