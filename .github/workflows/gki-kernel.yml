@@ -209,7 +209,7 @@ jobs:
         uses: actions/checkout@v4
         with:
          ref: dev
-         submodules: false
+         submodules: recursive
       - name: 初始化并更新子模块
         run: |
          cd "${{ env.CONFIG }}/common"
