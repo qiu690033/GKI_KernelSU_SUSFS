@@ -205,7 +205,11 @@ jobs:
             curl -LSsO https://github.com/zzh20188/GKI_KernelSU_SUSFS/raw/refs/heads/dev/5.15-patch/fix_5.15.legacy.patch
             patch -p1 < fix_5.15.legacy.patch
           fi
-
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+         ref: dev
+         submodules: false
       - name: 初始化并更新子模块
         run: |
          cd "${{ env.CONFIG }}/common"
