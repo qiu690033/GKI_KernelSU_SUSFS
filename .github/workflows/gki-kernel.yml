@@ -213,9 +213,19 @@ jobs:
 
       - name: 初始化并更新子模块
         run: |
+         if [ -d "${{ env.CONFIG }}/common" ]; then
+         cd "${{ env.CONFIG }}/common"
+         elif [ -d "common" ]; then
          cd common
+         else
+         echo "❌ 未找到 common 目录，当前路径：$(pwd)"
+         echo "📁 当前文件结构："
+         ls -al
+         exit 1
+         fi
+
          git submodule sync --recursive
-         git submodule update --init --recursive --force kernel/drivers/misc/lunarkernel_sched_extention 
+         git submodule update --init --recursive --force kernel/drivers/misc/lunarkernel_sched_extention   
    
       - name: 使GKI在一加8E平台正常使用
         if: ${{ inputs.supp_op }}
