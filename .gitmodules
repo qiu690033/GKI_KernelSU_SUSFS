@@ -1,0 +1,3 @@
+[submodule "kernel/drivers/misc/lunarkernel_sched_extention"]
+	path = kernel/drivers/misc/lunarkernel_sched_extention
+	url = https://github.com/LunarKernel-Dev/lunarkernel_sched_extention
